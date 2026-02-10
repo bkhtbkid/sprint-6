@@ -4,9 +4,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strings"
+	"path/filepath"
+	"time"
 
-	"github.com/Yandex-Practicum/go1fl-sprint6-final/pkg/morse"
+	"github.com/Yandex-Practicum/go1fl-sprint6-final/internal/service"
 )
 
 func MainHandler(w http.ResponseWriter, r *http.Request) {
@@ -14,7 +15,14 @@ func MainHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UploadHandler(w http.ResponseWriter, r *http.Request) {
-	file, header, err := r.FormFile("file")
+
+	err := r.ParseMultipartForm(10000)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("myFile")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -27,31 +35,25 @@ func UploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	text := string(data)
-	var result string
-
-	isMorse := true
-	for _, char := range text {
-		if !strings.ContainsRune(".- \n\r", char) {
-			isMorse = false
-			break
-		}
+	result, err := service.DetectFormat(string(data))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	if isMorse {
-		result = morse.ToText(text)
-	} else {
-		result = morse.ToMorse(text)
-	}
+	filename := time.Now().UTC().String() + filepath.Ext(header.Filename)
 
-	dst, err := os.Create(header.Filename)
+	dst, err := os.Create(filename)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	defer dst.Close()
 
-	dst.WriteString(result)
+	if _, err := dst.WriteString(result); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	w.Write([]byte(result))
 }
